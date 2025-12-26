@@ -30,6 +30,8 @@ user_data = {}
 last_bot_msg = {}
 
 
+
+
 PRODUCTS_FILE = "products.json"
 PRODUCTS = {"welcome": None, "shoes": [], "clothes": []}
 
@@ -161,23 +163,68 @@ def get_admin_category_menu():
 
 def get_admin_edit_products_reply_menu(category: str):
     mk = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-    products = PRODUCTS.get(category, [])
-    for product in products:
-        if isinstance(product, dict) and 'name' in product:
-            mk.add(f"{product['name']} - {product['price']} ₽")
+    for product in PRODUCTS.get(category, []):
+        if not isinstance(product, dict):
+            continue
+        name = product.get('name', '').strip()
+        if name == "◀️ Назад":
+            continue  # ❗ Исключаем фейковый товар
+        # Убери проверку наличия
+        if 'stock' not in product:
+            continue
+        mk.add(f"{name} - {product['price']} ₽")
     mk.add("◀️ Назад")
     return mk
+
+@bot.message_handler(func=lambda message: message.text == "◀️ Назад" and user_data.get(message.from_user.id, {}).get('waiting_for') == 'delete_product')
+def admin_delete_back_reply(message):
+    if not is_admin(message.from_user.id):
+        return
+    bot.send_message(message.chat.id, "🔧 Админ-панель", reply_markup=get_admin_reply_menu())
+    user_data[message.from_user.id] = {}  # Сбрасываем состояние
+
+
+
+@bot.message_handler(func=lambda message: message.text == "◀️ Назад")
+def admin_edit_back_reply(message):
+    user_id = message.from_user.id
+    if not is_admin(user_id):
+        return
+
+    # Проверяем текущее состояние пользователя
+    current_state = user_data.get(user_id, {}).get('waiting_for')
+
+    if current_state in ['edit_category', 'edit_product']:
+        # Возвращаем в главное админ-меню
+        bot.send_message(
+            message.chat.id,
+            "🔧 Админ-панель",
+            reply_markup=get_admin_reply_menu()
+        )
+        
+        user_data[user_id] = {}
+        # Сбрасываем состояние пользователя
+        if user_id in user_data:
+            user_data[user_id] = {}
+    else:
+        # Если состояние другое, возвращаем в главное меню бота
+        send_welcome(message.chat.id, user_id)
+
+
+
 
 
 @bot.message_handler(func=lambda message: message.text == "✏️ Редактировать")
 def admin_edit_select_reply(message):
     if not is_admin(message.from_user.id):
         return
+    user_data[message.from_user.id] = {'waiting_for': 'edit_category'}  # Устанавливаем состояние
     bot.send_message(
         message.chat.id,
         "Выберите категорию:",
         reply_markup=get_admin_category_menu()
     )
+
 
 
 
@@ -191,7 +238,10 @@ def admin_edit_shoes_reply(message):
         reply_markup=get_admin_edit_products_reply_menu("shoes")
     )
 
-@bot.message_handler(func=lambda message: " - " in message.text and "₽" in message.text)
+@bot.message_handler(func=lambda message: 
+    " - " in message.text and 
+    "₽" in message.text and 
+    user_data.get(message.from_user.id, {}).get('waiting_for') != 'delete_product_by_name')
 def admin_edit_product_by_name(message):
     if not is_admin(message.from_user.id):
         return
@@ -213,12 +263,18 @@ def admin_edit_product_by_name(message):
         return
 
     product_id = product['id']
+    user_data[message.from_user.id] = {
+        'waiting_for': 'edit_product',
+        'editing_product_id': product_id
+    }
+
     bot.send_message(
         message.chat.id,
         f"✏️ Что вы хотите изменить для *{product['name']}*?",
         parse_mode="Markdown",
         reply_markup=get_admin_product_actions_reply_menu(product_id)
     )
+
 
 def get_admin_product_actions_reply_menu(product_id):
     mk = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
@@ -228,13 +284,236 @@ def get_admin_product_actions_reply_menu(product_id):
     return mk
 
 
+
+
+
+
+@bot.message_handler(func=lambda message: message.text == "💰 Цену")
+def admin_change_price_reply(message):
+    if not is_admin(message.from_user.id):
+        return
+    user_id = message.from_user.id
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+    user_data[user_id]['waiting_for'] = 'price_edit'
+    bot.send_message(message.chat.id, "Введите новую цену товара (только число):")
+
+@bot.message_handler(func=lambda message: message.text == "📏 Размеры")
+def admin_change_sizes_reply(message):
+    if not is_admin(message.from_user.id):
+        return
+    user_id = message.from_user.id
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+    user_data[user_id]['waiting_for'] = 'sizes_edit'
+    bot.send_message(message.chat.id, "Введите новые размеры через запятую (например: 36, 37, 38):")
+
+@bot.message_handler(func=lambda message: message.text == "🖼 Фото")
+def admin_change_photo_reply(message):
+    if not is_admin(message.from_user.id):
+        return
+    user_id = message.from_user.id
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+    user_data[user_id]['waiting_for'] = f'photo_edit_{product_id}'
+    bot.send_message(message.chat.id, "Отправьте новое фото товара:")
+
+@bot.message_handler(func=lambda message: message.text == "📦 Наличие")
+def admin_change_stock_reply(message):
+    if not is_admin(message.from_user.id):
+        return
+    user_id = message.from_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+
+    product = find_product_by_id(product_id)
+    if not product or 'stock' not in product:
+        bot.send_message(message.chat.id, "❌ Ошибка: нет информации о наличии.")
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    for size, available in product['stock'].items():
+        status = "✅" if available else "❌"
+        new_val = 0 if available else 1
+        markup.add(types.InlineKeyboardButton(
+            f"{status} {size}",
+            callback_data=f"toggle_stock_{product_id}_{size}_{new_val}"
+        ))
+    markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data=f"admin_edit_prod_{product_id}"))
+
+    bot.send_message(
+        message.chat.id,
+        f"📦 *Наличие: {product['name']}*\n\nНажмите на размер для переключения:",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("toggle_stock_"))
+def toggle_stock_handler(call):
+    if not is_admin(call.from_user.id):
+        return
+    try:
+        parts = call.data.split("_")
+        product_id = int(parts[2])
+        size = parts[3]
+        new_status = bool(int(parts[4]))
+
+        for category in ["shoes", "clothes"]:
+            for product in PRODUCTS.get(category, []):
+                if product.get('id') == product_id:
+                    if 'stock' in product and size in product['stock']:
+                        product['stock'][size] = new_status
+                        save_products()
+                        bot.answer_callback_query(call.id, f"{size}: {'в наличии' if new_status else 'нет в наличии'}")
+
+                        # Обновляем меню наличия
+                        product = find_product_by_id(product_id)
+                        markup = types.InlineKeyboardMarkup(row_width=3)
+                        for size, available in product['stock'].items():
+                            status = "✅" if available else "❌"
+                            new_val = 0 if available else 1
+                            markup.add(types.InlineKeyboardButton(
+                                f"{status} {size}",
+                                callback_data=f"toggle_stock_{product_id}_{size}_{new_val}"
+                            ))
+                        markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data=f"admin_edit_prod_{product_id}"))
+
+                        bot.edit_message_reply_markup(
+                            call.message.chat.id,
+                            call.message.message_id,
+                            reply_markup=markup
+                        )
+                        return
+        bot.answer_callback_query(call.id, "Ошибка")
+    except Exception as e:
+        logger.error(f"Ошибка переключения наличия: {e}")
+        bot.answer_callback_query(call.id, "Ошибка")
+
+
+
+
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("admin_edit_prod_"))
+def admin_edit_prod_callback(call):
+    if not is_admin(call.from_user.id):
+        return
+    try:
+        product_id = int(call.data.split("_")[3])
+        product = find_product_by_id(product_id)
+        if not product:
+            bot.answer_callback_query(call.id, "Товар не найден")
+            return
+
+        bot.edit_message_text(
+            f"✏️ Что вы хотите изменить для *{product['name']}*?",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=get_admin_product_actions_reply_menu(product_id)
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в admin_edit_prod_callback: {e}")
+        bot.answer_callback_query(call.id, "Ошибка")
+
+
+
+
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('waiting_for') == 'price_edit')
+def admin_edit_price_handler(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        new_price = int(message.text.strip())
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Ошибка: введите корректную цену (только число).")
+        return
+
+    user_id = message.from_user.id
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+
+    updated = False
+    for category in ["shoes", "clothes"]:
+        for product in PRODUCTS.get(category, []):
+            if isinstance(product, dict) and product.get('id') == product_id:
+                product['price'] = new_price
+                updated = True
+                break
+        if updated:
+            save_products()
+            bot.send_message(message.chat.id, "✅ Цена обновлена!", reply_markup=get_admin_reply_menu())
+            user_data[user_id] = {}  # Сброс состояния
+            break
+
+
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('waiting_for') == 'sizes_edit')
+def admin_edit_sizes_handler(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    sizes = [s.strip() for s in message.text.split(',') if s.strip()]
+    if not sizes:
+        bot.send_message(message.chat.id, "❌ Размеры не могут быть пустыми. Повторите ввод:")
+        return
+
+    user_id = message.from_user.id
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+
+    updated = False
+    for category in ["shoes", "clothes"]:
+        for product in PRODUCTS.get(category, []):
+            if isinstance(product, dict) and product.get('id') == product_id:
+                product['sizes'] = sizes
+                product['stock'] = {size: True for size in sizes}  # Обновляем наличие
+                updated = True
+                break
+        if updated:
+            save_products()
+            bot.send_message(message.chat.id, "✅ Размеры обновлены!", reply_markup=get_admin_reply_menu())
+            user_data[user_id] = {}  # Сброс состояния
+            break
+
+
+
+
+
+
+
+
 @bot.message_handler(func=lambda message: message.text == "📝 Название")
 def admin_change_name_reply(message):
     if not is_admin(message.from_user.id):
         return
     user_id = message.from_user.id
-    user_data[user_id] = {'waiting_for': 'name_edit'}
+    # --- ПРОВЕРЯЕМ, ЧТО ЕСТЬ product_id ---
+    product_id = user_data[user_id].get('editing_product_id')
+    if not product_id:
+        bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
+        return
+    user_data[user_id]['waiting_for'] = 'name_edit'
     bot.send_message(message.chat.id, "Введите новое название товара:")
+
 
 
 
@@ -244,8 +523,8 @@ def admin_edit_name_handler(message):
         return
 
     new_name = message.text.strip()
-    # Получаем product_id из user_data
-    product_id = user_data[message.from_user.id].get('editing_product_id')
+    user_id = message.from_user.id
+    product_id = user_data[user_id].get('editing_product_id')
     if not product_id:
         bot.send_message(message.chat.id, "❌ Ошибка: не выбран товар.")
         return
@@ -260,7 +539,10 @@ def admin_edit_name_handler(message):
         if updated:
             save_products()
             bot.send_message(message.chat.id, "✅ Название обновлено!", reply_markup=get_admin_reply_menu())
+            user_data[user_id] = {}  # --- СБРОС СОСТОЯНИЯ ---
             break
+
+
 
     user_data[message.from_user.id].pop('waiting_for', None)
     user_data[message.from_user.id].pop('editing_product_id', None)
@@ -406,10 +688,14 @@ def get_support_admin_menu(ticket_id, status):
 def size_menu(category: str) -> types.InlineKeyboardMarkup:
     available_sizes = set()
     for p in PRODUCTS.get(category, []):
+        if not isinstance(p, dict):
+            continue
+        name = p.get('name', '').strip()
+        if name == "◀️ Назад":
+            continue
         stock = p.get("stock", {})
         for size in stock.keys():
             available_sizes.add(size)
-    
     if not available_sizes:
         return None
 
@@ -442,6 +728,7 @@ def show_browse(call, category: str, size: str, idx: int):
         return
         
     product = filtered[idx]
+    
 
     in_stock = product.get('stock', {}).get(size, True)
     stock_text = '✅ В наличии' if in_stock else '❌ Нет в наличии'
@@ -816,9 +1103,9 @@ def cart_checkout_handler(call):
     # Отправляем уведомление в группу
     notification_success = False
     try:
-        # Пробуем отправить с фото первого товара (если есть)
         first_item = cart[0]
-        product = find_product_by_id(first_item.get('product_id'))
+        product = find_product_by_id(first_item.get('product_id')) if first_item.get('product_id') else None
+
         if product and product.get("image"):
             bot.send_photo(
                 ADMIN_GROUP_ID,
@@ -837,6 +1124,7 @@ def cart_checkout_handler(call):
         notification_success = True
     except Exception as e:
         logger.error(f"Ошибка отправки заказа в группу: {e}")
+        notification_success = False
    
     # Ответ клиенту в popup
     if notification_success:
@@ -1252,7 +1540,7 @@ def safe_edit_message(call, text, reply_markup=None):
         bot.delete_message(call.message.chat.id, call.message.message_id)
     except:
         pass
-    bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=reply_markup)
+    bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=get_admin_reply_menu())
 
 @bot.callback_query_handler(func=lambda c: c.data == "admin_panel")
 def admin_panel_callback(call):
@@ -1261,7 +1549,7 @@ def admin_panel_callback(call):
     safe_edit_message(
         call,
         "🔧 *Админ-панель*",
-        reply_markup=get_admin_reply_menu
+        reply_markup=get_admin_reply_menu()
     )
 
 @bot.callback_query_handler(func=lambda c: c.data == "admin_orders")
@@ -1477,13 +1765,54 @@ def admin_edit_category(call):
 def admin_add_select_reply(message):
     if not is_admin(message.from_user.id):
         return
+    user_data[message.from_user.id] = {'waiting_for': 'add_category'}
     bot.send_message(
         message.chat.id,
         "Выберите категорию:",
         reply_markup=get_admin_category_menu()
     )
 
-@bot.message_handler(func=lambda message: message.text in ["👟 Обувь", "👕 Одежда"] and user_data.get(message.from_user.id, {}).get('waiting_for') is None)
+
+
+
+
+@bot.message_handler(func=lambda message:
+    user_data.get(message.from_user.id, {}).get('waiting_for') == 'delete_product_by_name' and
+    " - " in message.text and "₽" in message.text)
+def admin_delete_product_by_name_handler(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    name = message.text.split(" - ")[0].strip()
+
+    deleted = False
+    for category in ["shoes", "clothes"]:
+        for product in PRODUCTS.get(category, []):
+            if isinstance(product, dict) and product.get('name') == name:
+                PRODUCTS[category].remove(product)
+                deleted = True
+                save_products()
+                bot.send_message(
+                    message.chat.id,
+                    f"✅ Товар '{name}' удалён!",
+                    reply_markup=get_admin_reply_menu()
+                )
+                user_data[message.from_user.id] = {}  # сброс
+                break
+        if deleted:
+            break
+
+    if not deleted:
+        bot.send_message(message.chat.id, "❌ Товар не найден.", reply_markup=get_admin_delete_products_reply_menu())
+
+
+
+
+
+
+
+@bot.message_handler(func=lambda message: message.text in ["👟 Обувь", "👕 Одежда"] and
+                     user_data.get(message.from_user.id, {}).get('waiting_for') == 'add_category')
 def admin_add_category_reply(message):
     if not is_admin(message.from_user.id):
         return
@@ -1491,10 +1820,47 @@ def admin_add_category_reply(message):
     user_data[message.from_user.id] = {'waiting_for': f'name_new_{category}'}
     bot.send_message(message.chat.id, f"➕ Добавление {category}\n\nВведите название товара:")
 
+
+@bot.message_handler(func=lambda message: message.text == "👕 Одежда" and user_data.get(message.from_user.id, {}).get('waiting_for') == 'edit_category')
+def admin_edit_clothes_reply(message):
+    if not is_admin(message.from_user.id):
+        return
+    bot.send_message(
+        message.chat.id,
+        "Выберите товар для редактирования:",
+        reply_markup=get_admin_edit_products_reply_menu("clothes")
+    )
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("admin_del_prod_"))
+def admin_delete_product_callback(call):
+    if not is_admin(call.from_user.id):
+        return
+
+    product_id = int(call.data.split("_")[3])
+    deleted = False
+
+    for category in ["shoes", "clothes"]:
+        for product in PRODUCTS.get(category, []):
+            if isinstance(product, dict) and product.get('id') == product_id:
+                PRODUCTS[category].remove(product)
+                deleted = True
+                save_products()
+                bot.answer_callback_query(call.id, "✅ Товар удалён!")
+                bot.edit_message_text(
+                    "✅ Товар удалён!",
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=get_admin_reply_menu()
+                )
+                break
+        if deleted:
+            break
+
 @bot.message_handler(func=lambda message: message.text == "🗑 Удалить товар")
 def admin_delete_select_reply(message):
     if not is_admin(message.from_user.id):
         return
+    user_data[message.from_user.id] = {'waiting_for': 'delete_product_by_name'}
     bot.send_message(
         message.chat.id,
         "Выберите товар для удаления:",
@@ -1502,33 +1868,25 @@ def admin_delete_select_reply(message):
     )
 
 
+
 def get_admin_delete_products_reply_menu():
     mk = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
+
     for category in ["shoes", "clothes"]:
         for product in PRODUCTS.get(category, []):
-            if isinstance(product, dict) and 'name' in product:
-                mk.add(f"❌ {product['name']} - {product['price']} ₽")
+            if isinstance(product, dict) and 'name' in product and 'price' in product:
+                name = product.get('name', '').strip()
+                if name == "◀️ Назад":
+                    continue
+                # --- ИСПРАВЛЕНО: УБРАЛИ "❌" ИЗ ТЕКСТА КНОПКИ ---
+                mk.add(f"{name} - {product['price']} ₽")
+
     mk.add("◀️ Назад")
     return mk
 
 
-@bot.message_handler(func=lambda message: message.text.startswith("❌") and " - " in message.text and "₽" in message.text)
-def admin_delete_product_by_name(message):
-    if not is_admin(message.from_user.id):
-        return
 
-    name = message.text.split(" - ")[0].replace("❌", "").strip()
-    deleted = False
-    for category in ["shoes", "clothes"]:
-        for product in PRODUCTS.get(category, []):
-            if isinstance(product, dict) and product.get('name') == name:
-                PRODUCTS[category].remove(product)
-                deleted = True
-                break
-        if deleted:
-            save_products()
-            bot.send_message(message.chat.id, "✅ Товар удалён!", reply_markup=get_admin_reply_menu())
-            break
+
 
 
 @bot.message_handler(func=lambda message: message.text == "🖼 Приветствие")
@@ -1717,9 +2075,13 @@ def client_reply_callback(call):
 # --- ОБРАБОТЧИКИ КОМАНД ---
 
 @bot.message_handler(content_types=['photo', 'video', 'animation'])
+
 def universal_photo_handler(message):
+    
     user_id = message.from_user.id
+    
     wf = user_data.get(user_id, {}).get('waiting_for')
+    print(f"[DEBUG] 📸 universal_photo_handler вызван. user_id={user_id}, waiting_for={wf}")
     if not wf:
         return
 
@@ -1748,7 +2110,7 @@ def universal_photo_handler(message):
         send_one_msg(
             message.chat.id,
             "✅ Приветствие обновлено!",
-            reply_markup=get_admin_reply_menu,
+            reply_markup=get_admin_reply_menu(),
             user_id=user_id
         )
         del user_data[user_id]['waiting_for']
@@ -1772,7 +2134,7 @@ def universal_photo_handler(message):
             f"✅ Товар успешно добавлен!\n\n"
             f"Название: {user_data[user_id]['new_product']['name']}\n"
             f"Цена: {user_data[user_id]['new_product']['price']} ₽",
-            reply_markup=get_admin_reply_menu,
+            reply_markup=get_admin_reply_menu(),
             user_id=user_id
         )
         del user_data[user_id]['new_product']
@@ -1802,6 +2164,18 @@ def universal_photo_handler(message):
         except (ValueError, IndexError):
             bot.send_message(message.chat.id, "❌ Ошибка при обновлении фото.")
             del user_data[user_id]['waiting_for']
+
+
+
+
+@bot.message_handler(commands=['debug'])
+def debug_state(message):
+    user_id = message.from_user.id
+    state = user_data.get(user_id, {})
+    bot.send_message(
+        message.chat.id,
+        f"🧪 Debug:\nuser_id: {user_id}\nstate: {json.dumps(state, ensure_ascii=False, indent=2)}"
+    )
 
 # --- ОБРАБОТЧИК ТЕКСТА (ПОСЛЕДНИЙ) ---
 
@@ -1979,6 +2353,7 @@ def handle_text(message):
             bot.send_message(message.chat.id, "❌ Размеры не могут быть пустыми. Повторите ввод:")
             return
         user_data[user_id]['new_product']['sizes'] = sizes
+        user_data[user_id]['new_product']['stock'] = {size: True for size in sizes}
         user_data[user_id]['waiting_for'] = f'photo_new_{category}'
         bot.send_message(
             message.chat.id,
@@ -2048,7 +2423,7 @@ def handle_text(message):
                         break
                 if updated:
                     save_products()
-                    send_one_msg(message.chat.id, "✅ Размеры обновлены!", reply_markup=get_admin_reply_menu, user_id=user_id)
+                    send_one_msg(message.chat.id, "✅ Размеры обновлены!", user_id=user_id, reply_markup=get_admin_reply_menu())
                     break
             else:
                 bot.send_message(message.chat.id, "❌ Товар не найден.")
