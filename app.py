@@ -6,6 +6,8 @@ import json
 import os
 import logging
 from datetime import datetime, timedelta
+from flask import Flask, Response
+import threading
 
 # --- КОНСТАНТЫ И ХРАНИЛИЩА ---
 # Хранение корзин и заказов
@@ -2481,6 +2483,20 @@ def check_bot_in_support_group():
     except Exception as e:
         logger.error(f"Ошибка доступа к группе поддержки: {e}")
         return False
+    
+
+
+# Создаём Flask-сервер для ответа на HTTP-запросы
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return Response("Bot is alive", status=200)
+
+# Запускаем сервер в фоне
+thread = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 8080))))
+thread.daemon = True
+thread.start()
 
 if __name__ == "__main__":
     try:
