@@ -2987,6 +2987,20 @@ thread = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.env
 thread.daemon = True
 thread.start()
 
+
+
+# Создаём Flask-сервер для Koyeb
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Бот работает!", 200
+
+def run_flask():
+    # Берем порт, который дает Koyeb, или используем 8000 по умолчанию
+    port = int(os.environ.get("PORT", 8000)) 
+    app.run(host="0.0.0.0", port=port)
+
 if __name__ == "__main__":
     try:
         load_products()
@@ -2995,7 +3009,15 @@ if __name__ == "__main__":
         load_promocodes()
         convert_old_products()  # Запустится один раз
         load_orders()
+
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        print(f"✅ Flask сервер запущен на порту {os.environ.get('PORT', 8000)}")
+
+
         print("✅ Товары и заказы загружены. Бот запускается...")
+        
+        bot.infinity_polling(timeout=10, long_polling_timeout=5)
         
         if check_bot_in_group():
             print("✅ Доступ к основной админ-группе подтвержден")
