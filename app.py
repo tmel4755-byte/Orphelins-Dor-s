@@ -8,6 +8,10 @@ import logging
 from datetime import datetime, timedelta
 from flask import Flask, Response
 import threading
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # --- КОНСТАНТЫ И ХРАНИЛИЩА ---
 # Хранение корзин и заказов
@@ -17,16 +21,17 @@ NEXT_ORDER_ID = 1
 ORDERS_FILE = "orders.json"
 
 # Хранение тикетов поддержки
-# ticket_id -> { "user_id": ..., "username": ..., "status": "new"|"in_work"|"closed", "admin_msg_id": ..., "client_msg_id": ... }
 SUPPORT_TICKETS = {}
 NEXT_TICKET_ID = 1
 SUPPORT_COOLDOWN_SECONDS = 300  # 5 минут
 
 # ID группы для уведомлений о заказах
-ADMIN_GROUP_ID = "-4975322862"  # Замените на ID вашей группы
-SUPPORT_GROUP_ID = "-5095562342"  # ← ЗАМЕНИТЕ НА РЕАЛЬНЫЙ ID ВАШЕЙ ГРУППЫ ПОДДЕРЖКИ
+ADMIN_GROUP_ID = os.getenv("ADMIN_GROUP_ID", "-4975322862")
+SUPPORT_GROUP_ID = os.getenv("SUPPORT_GROUP_ID", "-5095562342")
+
 # ID администраторов (добавьте свой ID)
-ADMIN_IDS = [1144206940, 6539363874] #6539363874
+ADMIN_IDS = [1144206940, 6539363874] 
+
 # Хранилище состояний пользователей
 user_data = {}
 last_bot_msg = {}
@@ -36,16 +41,23 @@ REFERRALS_FILE = "referrals.json"
 REFERRALS = {}  # user_id -> {"invited_by": ID, "balance": 0, "invited_count": 0}
 
 def save_referrals():
-    with open(REFERRALS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(REFERRALS, f, ensure_ascii=False, indent=4)
+    try:
+        with open(REFERRALS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(REFERRALS, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving referrals: {e}")
 
 def load_referrals():
     global REFERRALS
     if os.path.exists(REFERRALS_FILE):
-        with open(REFERRALS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # Конвертируем ключи в int
-            REFERRALS = {int(k): v for k, v in data.items()}
+        try:
+            with open(REFERRALS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Конвертируем ключи в int
+                REFERRALS = {int(k): v for k, v in data.items()}
+        except Exception as e:
+            logger.error(f"Error loading referrals: {e}")
+            REFERRALS = {}
     else:
         save_referrals()
 
@@ -55,7 +67,7 @@ def delete_user_msg_delayed(chat_id, message_id, delay=5):
         time.sleep(delay)
         try:
             bot.delete_message(chat_id, message_id)
-        except:
+        except Exception:
             pass
     threading.Thread(target=_delete, daemon=True).start()
 
@@ -64,35 +76,47 @@ PROMOCODES_FILE = "promocodes.json"
 PROMOCODES = {}  # "CODE": {"type": "percent"|"fixed", "value": 10, "left": 100}
 
 def save_promocodes():
-    with open(PROMOCODES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(PROMOCODES, f, ensure_ascii=False, indent=4)
+    try:
+        with open(PROMOCODES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(PROMOCODES, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving promocodes: {e}")
 
 def load_promocodes():
     global PROMOCODES
     if os.path.exists(PROMOCODES_FILE):
-        with open(PROMOCODES_FILE, 'r', encoding='utf-8') as f:
-            PROMOCODES = json.load(f)
+        try:
+            with open(PROMOCODES_FILE, 'r', encoding='utf-8') as f:
+                PROMOCODES = json.load(f)
+        except Exception as e:
+             logger.error(f"Error loading promocodes: {e}")
+             PROMOCODES = {}
     else:
         save_promocodes()
-
 
 
 TICKETS_FILE = "tickets.json"
 
 def save_tickets():
-    with open(TICKETS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(SUPPORT_TICKETS, f, ensure_ascii=False, indent=4)
+    try:
+        with open(TICKETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(SUPPORT_TICKETS, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving tickets: {e}")
 
 def load_tickets():
     global SUPPORT_TICKETS, NEXT_TICKET_ID
     if os.path.exists(TICKETS_FILE):
-        with open(TICKETS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # Конвертируем ключи обратно в int
-            SUPPORT_TICKETS = {int(k): v for k, v in data.items()}
-            if SUPPORT_TICKETS:
-                NEXT_TICKET_ID = max(SUPPORT_TICKETS.keys()) + 1
-
+        try:
+            with open(TICKETS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Конвертируем ключи обратно в int
+                SUPPORT_TICKETS = {int(k): v for k, v in data.items()}
+                if SUPPORT_TICKETS:
+                    NEXT_TICKET_ID = max(SUPPORT_TICKETS.keys()) + 1
+        except Exception as e:
+            logger.error(f"Error loading tickets: {e}")
+            SUPPORT_TICKETS = {}
 
 
 PRODUCTS_FILE = "products.json"
@@ -108,10 +132,14 @@ FAQ_ANSWERS = [
 _product_cache = {}
 
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 # Вставьте ваш токен бота
-BOT_TOKEN = "8556338852:AAGXRSJrg87P8BoRsmArzc3bVXWAT1d6dqo"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN env variable is missing!")
+
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True, num_threads=20)
 
 # --- УТИЛИТЫ ---
@@ -124,18 +152,13 @@ def get_user_info(user):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Нет имени"
     return username, full_name
 
-def get_next_product_id(category):
-    max_id = 0
-    for cat in PRODUCTS:
-        if isinstance(PRODUCTS[cat], list):
-            for product in PRODUCTS[cat]:
-                if product.get('id', 0) > max_id:
-                    max_id = product['id']
-    return max_id + 1
 
 def save_products():
-    with open(PRODUCTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(PRODUCTS, f, ensure_ascii=False, indent=4)
+    try:
+        with open(PRODUCTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(PRODUCTS, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving products: {e}")
 
 def load_products():
     global PRODUCTS
@@ -154,18 +177,26 @@ def load_products():
 def save_orders():
     global NEXT_ORDER_ID
     data = {"next_order_id": NEXT_ORDER_ID, "orders": ORDERS}
-    with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    try:
+        with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving orders: {e}")
 
 def load_orders():
     global NEXT_ORDER_ID, ORDERS
     if os.path.exists(ORDERS_FILE):
-        with open(ORDERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            NEXT_ORDER_ID = data.get("next_order_id", 1)
-            ORDERS = data.get("orders", {})
-            # Конвертируем ключи обратно в int, если они были строками
-            ORDERS = {int(k): v for k, v in ORDERS.items()}
+        try:
+            with open(ORDERS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                NEXT_ORDER_ID = data.get("next_order_id", 1)
+                ORDERS = data.get("orders", {})
+                # Конвертируем ключи обратно в int, если они были строками
+                ORDERS = {int(k): v for k, v in ORDERS.items()}
+        except Exception as e:
+             logger.error(f"Error loading orders: {e}")
+             ORDERS = {}
+             NEXT_ORDER_ID = 1
     else:
         save_orders()
 
@@ -329,10 +360,18 @@ def get_admin_edit_products_reply_menu(category: str):
     return mk
 
 @bot.message_handler(func=lambda message: message.text == "◀️ Назад" and user_data.get(message.from_user.id, {}).get('waiting_for') == 'delete_product')
-
-
-
-
+def admin_delete_back_handler(message):
+    """Обработчик кнопки Назад при удалении товара"""
+    if not is_admin(message.from_user.id):
+        return
+    user_id = message.from_user.id
+    if user_id in user_data:
+        user_data[user_id]['waiting_for'] = None
+    bot.send_message(
+        message.chat.id,
+        "🔧 Админ-панель",
+        reply_markup=get_admin_reply_menu()
+    )
 
 
 
@@ -494,33 +533,36 @@ def toggle_stock_handler(call):
         size = parts[3]
         new_status = bool(int(parts[4]))
 
-        for category in ["shoes", "clothes"]:
-            for product in PRODUCTS.get(category, []):
-                if product.get('id') == product_id:
-                    if 'stock' in product and size in product['stock']:
-                        product['stock'][size] = new_status
-                        save_products()
-                        bot.answer_callback_query(call.id, f"{size}: {'в наличии' if new_status else 'нет в наличии'}")
+        # Ищем товар во всех категориях
+        product = find_product_by_id(product_id)
+        if product and 'stock' in product and size in product['stock']:
+            product['stock'][size] = new_status
+            save_products()
+            bot.answer_callback_query(call.id, f"{size}: {'в наличии' if new_status else 'нет в наличии'}")
 
-                        # Обновляем меню наличия
-                        product = find_product_by_id(product_id)
-                        markup = types.InlineKeyboardMarkup(row_width=3)
-                        for size, available in product['stock'].items():
-                            status = "✅" if available else "❌"
-                            new_val = 0 if available else 1
-                            markup.add(types.InlineKeyboardButton(
-                                f"{status} {size}",
-                                callback_data=f"toggle_stock_{product_id}_{size}_{new_val}"
-                            ))
-                        markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data=f"admin_edit_prod_{product_id}"))
+            # Обновляем меню наличия
+            product = find_product_by_id(product_id)
+            if product:
+                markup = types.InlineKeyboardMarkup(row_width=3)
+                for s, available in product['stock'].items():
+                    status = "✅" if available else "❌"
+                    new_val = 0 if available else 1
+                    markup.add(types.InlineKeyboardButton(
+                        f"{status} {s}",
+                        callback_data=f"toggle_stock_{product_id}_{s}_{new_val}"
+                    ))
+                markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data=f"admin_edit_prod_{product_id}"))
 
-                        bot.edit_message_reply_markup(
-                            call.message.chat.id,
-                            call.message.message_id,
-                            reply_markup=markup
-                        )
-                        return
-        bot.answer_callback_query(call.id, "Ошибка")
+                try:
+                    bot.edit_message_reply_markup(
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=markup
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка обновления меню наличия: {e}")
+            return
+        bot.answer_callback_query(call.id, "Ошибка: товар или размер не найден")
     except Exception as e:
         logger.error(f"Ошибка переключения наличия: {e}")
         bot.answer_callback_query(call.id, "Ошибка")
@@ -562,6 +604,9 @@ def admin_edit_price_handler(message):
 
     try:
         new_price = int(message.text.strip())
+        if new_price <= 0:
+            bot.send_message(message.chat.id, "❌ Ошибка: цена должна быть больше 0.")
+            return
     except ValueError:
         bot.send_message(message.chat.id, "❌ Ошибка: введите корректную цену (только число).")
         return
@@ -573,17 +618,29 @@ def admin_edit_price_handler(message):
         return
 
     updated = False
-    for category in ["shoes", "clothes"]:
-        for product in PRODUCTS.get(category, []):
-            if isinstance(product, dict) and product.get('id') == product_id:
-                product['price'] = new_price
-                updated = True
+    # Ищем товар во всех категориях
+    for cat in PRODUCTS:
+        if cat == "welcome" or not isinstance(PRODUCTS[cat], dict):
+            continue
+        for subcat in PRODUCTS[cat]:
+            for product in PRODUCTS[cat][subcat]:
+                if isinstance(product, dict) and product.get('id') == product_id:
+                    product['price'] = new_price
+                    updated = True
+                    break
+            if updated:
                 break
         if updated:
-            save_products()
-            bot.send_message(message.chat.id, "✅ Цена обновлена!", reply_markup=get_admin_reply_menu())
-            user_data[user_id] = {}  # Сброс состояния
             break
+    
+    if updated:
+        save_products()
+        bot.send_message(message.chat.id, "✅ Цена обновлена!", reply_markup=get_admin_reply_menu())
+        user_data[user_id]['waiting_for'] = None
+        user_data[user_id].pop('editing_product_id', None)
+    else:
+        bot.send_message(message.chat.id, "❌ Товар не найден.")
+        user_data[user_id]['waiting_for'] = None
 
 
 @bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('waiting_for') == 'sizes_edit')
@@ -593,7 +650,13 @@ def admin_edit_sizes_handler(message):
 
     sizes = [s.strip() for s in message.text.split(',') if s.strip()]
     if not sizes:
-        bot.send_message(message.chat.id, "❌ Размеры не могут быть пустыми. Повторите ввод:")
+        bot.send_message(message.chat.id, "❌ Размеры не могут быть пустыми. Введите размеры через запятую:")
+        return
+    
+    # Валидация: проверяем, что размеры не пустые строки
+    sizes = [s for s in sizes if s]
+    if not sizes:
+        bot.send_message(message.chat.id, "❌ Размеры не могут быть пустыми. Введите корректные размеры через запятую:")
         return
 
     user_id = message.from_user.id
@@ -603,18 +666,32 @@ def admin_edit_sizes_handler(message):
         return
 
     updated = False
-    for category in ["shoes", "clothes"]:
-        for product in PRODUCTS.get(category, []):
-            if isinstance(product, dict) and product.get('id') == product_id:
-                product['sizes'] = sizes
-                product['stock'] = {size: True for size in sizes}  # Обновляем наличие
-                updated = True
+    # Ищем товар во всех категориях
+    for cat in PRODUCTS:
+        if cat == "welcome" or not isinstance(PRODUCTS[cat], dict):
+            continue
+        for subcat in PRODUCTS[cat]:
+            for product in PRODUCTS[cat][subcat]:
+                if isinstance(product, dict) and product.get('id') == product_id:
+                    product['sizes'] = sizes
+                    # Обновляем stock: сохраняем существующие статусы, добавляем новые как True
+                    old_stock = product.get('stock', {})
+                    product['stock'] = {size: old_stock.get(size, True) for size in sizes}
+                    updated = True
+                    break
+            if updated:
                 break
         if updated:
-            save_products()
-            bot.send_message(message.chat.id, "✅ Размеры обновлены!", reply_markup=get_admin_reply_menu())
-            user_data[user_id] = {}  # Сброс состояния
             break
+    
+    if updated:
+        save_products()
+        bot.send_message(message.chat.id, "✅ Размеры обновлены!", reply_markup=get_admin_reply_menu())
+        user_data[user_id]['waiting_for'] = None
+        user_data[user_id].pop('editing_product_id', None)
+    else:
+        bot.send_message(message.chat.id, "❌ Товар не найден.")
+        user_data[user_id]['waiting_for'] = None
 
 
 
@@ -645,6 +722,10 @@ def admin_edit_name_handler(message):
         return
 
     new_name = message.text.strip()
+    if not new_name:
+        bot.send_message(message.chat.id, "❌ Название не может быть пустым. Введите новое название:")
+        return
+    
     user_id = message.from_user.id
     product_id = user_data[user_id].get('editing_product_id')
     if not product_id:
@@ -652,22 +733,29 @@ def admin_edit_name_handler(message):
         return
 
     updated = False
-    for category in ["shoes", "clothes"]:
-        for product in PRODUCTS.get(category, []):
-            if isinstance(product, dict) and product.get('id') == product_id:
-                product['name'] = new_name
-                updated = True
+    # Ищем товар во всех категориях
+    for cat in PRODUCTS:
+        if cat == "welcome" or not isinstance(PRODUCTS[cat], dict):
+            continue
+        for subcat in PRODUCTS[cat]:
+            for product in PRODUCTS[cat][subcat]:
+                if isinstance(product, dict) and product.get('id') == product_id:
+                    product['name'] = new_name
+                    updated = True
+                    break
+            if updated:
                 break
         if updated:
-            save_products()
-            bot.send_message(message.chat.id, "✅ Название обновлено!", reply_markup=get_admin_reply_menu())
-            user_data[user_id] = {}  # --- СБРОС СОСТОЯНИЯ ---
             break
-
-
-
-    user_data[message.from_user.id].pop('waiting_for', None)
-    user_data[message.from_user.id].pop('editing_product_id', None)
+    
+    if updated:
+        save_products()
+        bot.send_message(message.chat.id, "✅ Название обновлено!", reply_markup=get_admin_reply_menu())
+        user_data[user_id]['waiting_for'] = None
+        user_data[user_id].pop('editing_product_id', None)
+    else:
+        bot.send_message(message.chat.id, "❌ Товар не найден.")
+        user_data[user_id]['waiting_for'] = None
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("order_delete_"))
 def admin_order_delete(call):
@@ -728,16 +816,30 @@ def get_orders_list_menu():
 
 
 def get_admin_edit_menu(category):
+    """Получает меню редактирования товаров для категории (работает с новой структурой с подкатегориями)"""
     markup = types.InlineKeyboardMarkup(row_width=1)
-    products = PRODUCTS.get(category, [])
-    if not isinstance(products, list):
-        products = []
-    for product in products:
-        if isinstance(product, dict) and 'id' in product:
-            markup.add(types.InlineKeyboardButton(
-                f"{product['name']} - {product['price']} ₽",
-                callback_data=f"admin_edit_prod_{product['id']}"
-            ))
+    
+    # Проверяем структуру категории
+    cat_data = PRODUCTS.get(category, {})
+    if not isinstance(cat_data, dict):
+        # Старая структура (список товаров) - для обратной совместимости
+        if isinstance(cat_data, list):
+            for product in cat_data:
+                if isinstance(product, dict) and 'id' in product:
+                    markup.add(types.InlineKeyboardButton(
+                        f"{product['name']} - {product['price']} ₽",
+                        callback_data=f"admin_edit_prod_{product['id']}"
+                    ))
+    else:
+        # Новая структура (словарь подкатегорий)
+        for subcat in cat_data:
+            for product in cat_data[subcat]:
+                if isinstance(product, dict) and 'id' in product:
+                    markup.add(types.InlineKeyboardButton(
+                        f"{product['name']} - {product['price']} ₽",
+                        callback_data=f"admin_edit_prod_{product['id']}"
+                    ))
+    
     markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data="admin_panel"))
     return markup
 
@@ -913,16 +1015,6 @@ def show_browse(call, category: str, size: str, idx: int):
     )
 
 # --- СООБЩЕНИЯ ---
-def delete_user_msg_delayed(chat_id, message_id, delay=3):
-    def delayed_delete():
-        time.sleep(delay)
-        try:
-            bot.delete_message(chat_id, message_id)
-        except:
-            pass # Если сообщение уже удалено
-    # Ставим daemon=True, чтобы потоки не мешали выключению бота
-    t = threading.Thread(target=delayed_delete, daemon=True)
-    t.start()
 
 def send_one_msg(chat_id, text, reply_markup=None, parse_mode="Markdown", user_id=None):
     if user_id and last_bot_msg.get(user_id):
@@ -1016,30 +1108,6 @@ def admin_edit_stock(call):
         reply_markup=markup
     )
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("toggle_stock_"))
-def toggle_stock_handler(call):
-    if not is_admin(call.from_user.id):
-        return
-    try:
-        parts = call.data.split("_")
-        product_id = int(parts[2])
-        size = parts[3]
-        new_status = bool(int(parts[4]))
-
-        for category in ["shoes", "clothes"]:
-            for product in PRODUCTS.get(category, []):
-                if product.get('id') == product_id:
-                    if 'stock' in product and size in product['stock']:
-                        product['stock'][size] = new_status
-                        save_products()
-                        bot.answer_callback_query(call.id, f"{size}: {'в наличии' if new_status else 'нет в наличии'}")
-                        # Обновляем меню
-                        admin_edit_stock(call)
-                        return
-        bot.answer_callback_query(call.id, "Ошибка")
-    except Exception as e:
-        logger.error(f"Ошибка переключения наличия: {e}")
-        bot.answer_callback_query(call.id, "Ошибка")
 
 @bot.message_handler(commands=['start'])
 def send_welcome_command(message):
@@ -1171,9 +1239,19 @@ def points_apply(call):
         return
 
     # Записываем в сессию, что пользователь хочет списать баллы
+    if user_id not in user_data:
+        user_data[user_id] = {}
     user_data[user_id]['applied_bonuses'] = balance
-    bot.answer_callback_query(call.id, f"✅ Списано {balance} ₽")
-    show_cart(call) # Обновляем корзину
+    bot.answer_callback_query(call.id, f"✅ Баллы применены")
+    
+    # Обновляем корзину через создание фейкового message объекта
+    class FakeMessage:
+        def __init__(self, chat_id, user_id):
+            self.chat = type('obj', (object,), {'id': chat_id})()
+            self.from_user = type('obj', (object,), {'id': user_id})()
+    
+    fake_msg = FakeMessage(call.message.chat.id, user_id)
+    show_cart(fake_msg)
 
 # Обработка текстового ввода промокода (добавь в handle_text)
 # Внутри handle_text добавь условие:
@@ -1386,12 +1464,27 @@ def cart_clear_handler(call):
 def admin_cancel(call):
     user_id = call.from_user.id
     if user_id in user_data:
-        prev_state = user_data.pop(user_id, None)
-        logger.info(f"Админ {user_id} отменил операцию: {prev_state}")
+        prev_waiting = user_data[user_id].get('waiting_for')
+        # Очищаем только состояние ожидания, не весь объект
+        user_data[user_id]['waiting_for'] = None
+        user_data[user_id].pop('temp_cat', None)
+        user_data[user_id].pop('temp_sub', None)
+        user_data[user_id].pop('editing_product_id', None)
+        user_data[user_id].pop('new_product', None)
+        user_data[user_id].pop('promo_tmp', None)
+        user_data[user_id].pop('current_ticket_id', None)
+        
+        logger.info(f"Пользователь {user_id} отменил операцию: {prev_waiting}")
         bot.answer_callback_query(call.id, "⏹️ Операция отменена", show_alert=False)
-        # Возвращаем в главное меню, если отмена была из главного меню
-        if prev_state and prev_state.get('waiting_for') in ['support_message', 'name_new_shoes', 'name_new_clothes']:
+        
+        # Возвращаем в главное меню, если отмена была из определенных операций
+        if prev_waiting in ['support_message', 'name_new_shoes', 'name_new_clothes', 'input_promo', 
+                           'msg_to_support', 'client_reply_message']:
             send_welcome(call.message.chat.id, user_id)
+        elif is_admin(user_id) and prev_waiting and prev_waiting.startswith(('add_', 'wait_', 'prod_', 'del_', 'edit_')):
+            # Если админ отменил админскую операцию, возвращаем в админ-панель
+            send_one_msg(call.message.chat.id, "🔧 Админ-панель", 
+                        reply_markup=get_admin_reply_menu(), user_id=user_id)
     else:
         bot.answer_callback_query(call.id, "⏹️ Нет активных операций", show_alert=False)
 
@@ -1415,32 +1508,23 @@ def faq_handler(call):
         logger.error(f"Ошибка в faq_handler: {e}")
         bot.answer_callback_query(call.id, "⚠️ Произошла ошибка.")
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("back_"))
-def back_handler(call):
-    data = call.data.split("_")[1]
+@bot.callback_query_handler(func=lambda c: c.data == "back_main")
+def back_main_handler(call):
+    """Обработчик кнопки 'Главное меню' - всегда возвращает в главное меню клиента"""
+    user_id = call.from_user.id
     
-    if data == "main":
-        send_welcome(call.message.chat.id, call.from_user.id)
-        return
+    # Очищаем состояние пользователя
+    if user_id in user_data:
+        user_data[user_id]['waiting_for'] = None
+        user_data[user_id]['current_cat'] = None
+        user_data[user_id]['current_sub'] = None
+        user_data[user_id].pop('temp_cat', None)
+        user_data[user_id].pop('temp_sub', None)
     
-    if data == "faq":
-        faq_reply(call.message)
-        return
-    
-    # Логика возврата к выбору размеров (cat_shoes, cat_clothes)
-    if data in ["shoes", "clothes"]:
-        category = data
-        mk = size_menu(category)
-        if mk:
-            bot.edit_message_text(
-                f"{'👟 Выберите размер обуви:' if category == 'shoes' else '👕 Выберите размер одежды:'}",
-                call.message.chat.id,
-                call.message.message_id,
-                reply_markup=mk
-            )
-        else:
-            bot.answer_callback_query(call.id, "Товары скоро появятся!")
-        return
+    # Всегда возвращаем в главное меню (не в админ-панель)
+    send_welcome(call.message.chat.id, user_id)
+    bot.answer_callback_query(call.id)
+
 
 # --- КАТАЛОГ И НАВИГАЦИЯ (ИСПРАВЛЕНО) ---
 
@@ -1579,6 +1663,10 @@ def order_from_product_handler(call):
         
         username, full_name = get_user_info(call.from_user)
 
+        # Рассчитываем итоговую сумму
+        total_price = product["price"]
+        final_pay = total_price
+        
         ORDERS[order_id] = {
             "user_id": user_id,
             "username": username,
@@ -1589,19 +1677,23 @@ def order_from_product_handler(call):
                 "name": product["name"],
                 "price": product["price"]
             }],
+            "total_price": total_price,
+            "discount": 0,
+            "final_pay": final_pay,
             "status": "new",
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         save_orders()
 
         admin_text = (
-            f"🔔 *Новый заказ #{order_id} (Быстрый заказ)*\n"
+            f"🔔 *НОВЫЙ ЗАКАЗ #{order_id} (Быстрый заказ)*\n\n"
             f"👤 Клиент: {full_name}\n"
             f"📱 Username: {username}\n"
-            f"🆔 User ID: `{user_id}`\n"
-            f"🛍 Товар: {product['name']}\n"
-            f"📏 Размер: {size}\n"
-            f"💰 Цена: {product['price']} ₽"
+            f"🆔 ID: `{user_id}`\n\n"
+            f"🛍 *Товары:*\n"
+            f"• {product['name']} ({size}) — {product['price']} ₽\n\n"
+            f"💰 Сумма: {total_price} ₽\n"
+            f"✅ *ИТОГО К ОПЛАТЕ: {final_pay} ₽*"
         )
 
         mk_admin = types.InlineKeyboardMarkup()
@@ -1627,12 +1719,9 @@ def order_from_product_handler(call):
             bot.answer_callback_query(call.id, "Не удалось отправить заказ")
 
         client_text = (
-            f"✅ *Заказ #{order_id} оформлен!*\n"
-            f"Товар: {product['name']}\n"
-            f"Размер: {size}\n"
-            f"Цена: {product['price']} ₽\n"
-            f"Наш менеджер свяжется с вами в ближайшее время.\n"
-            f"Контакты:\n📱 Telegram: @sonhayy"
+            f"✅ *Заказ #{order_id} принят!*\n\n"
+            f"Сумма к оплате: *{final_pay} ₽*\n\n"
+            f"Менеджер свяжется с вами в ближайшее время для уточнения деталей оплаты и доставки. Спасибо! ❤️"
         )
         mk_client = types.InlineKeyboardMarkup()
         mk_client.add(types.InlineKeyboardButton("◀️ Главное меню", callback_data="back_main"))
@@ -1842,11 +1931,21 @@ def safe_edit_message(call, text, reply_markup=None):
 def admin_panel_callback(call):
     if not is_admin(call.from_user.id):
         return
+    
+    user_id = call.from_user.id
+    # Очищаем состояние при возврате в админ-панель
+    if user_id in user_data:
+        user_data[user_id].pop('waiting_for', None)
+        user_data[user_id].pop('editing_product_id', None)
+        user_data[user_id].pop('temp_cat', None)
+        user_data[user_id].pop('temp_sub', None)
+    
     safe_edit_message(
         call,
         "🔧 *Админ-панель*",
         reply_markup=get_admin_reply_menu()
     )
+    bot.answer_callback_query(call.id)
 
 @bot.callback_query_handler(func=lambda c: c.data == "admin_orders")
 def admin_orders_list(call):
@@ -2049,16 +2148,37 @@ def admin_order_change_status(call):
 
 
 
+@bot.callback_query_handler(func=lambda c: c.data == "admin_edit_select")
+def admin_edit_select_callback(call):
+    """Обработчик возврата к выбору категории для редактирования"""
+    if not is_admin(call.from_user.id):
+        return
+    
+    user_id = call.from_user.id
+    if user_id in user_data:
+        user_data[user_id]['waiting_for'] = 'edit_category'
+        user_data[user_id].pop('editing_product_id', None)
+    
+    # Показываем меню выбора категории
+    mk = get_admin_category_menu()
+    safe_edit_message(
+        call,
+        "✏️ Выберите категорию для редактирования:",
+        reply_markup=mk
+    )
+    bot.answer_callback_query(call.id)
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("admin_edit_category_"))
 def admin_edit_category(call):
-    if not is_admin(call.from_user.id): return
+    if not is_admin(call.from_user.id): 
+        return
     category = call.data.split("_")[3]  # shoes или clothes
-    bot.edit_message_text(
+    safe_edit_message(
+        call,
         f"✏️ Редактирование {'обуви' if category == 'shoes' else 'одежды'}\n\nВыберите товар:",
-        call.message.chat.id,
-        call.message.message_id,
         reply_markup=get_admin_edit_menu(category)
     )
+    bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(func=lambda message: message.text == "➕ Добавить товар")
@@ -2098,35 +2218,6 @@ def admin_delete_product_by_name_handler(message):
     user_data[message.from_user.id]['waiting_for'] = None
 
 
-def show_browse(chat_id, category, subcategory, size, idx, user_id):
-    filtered = [p for p in PRODUCTS[category][subcategory] if size in p.get('sizes', [])]
-    if not filtered:
-        bot.send_message(chat_id, "❌ В этом разделе пока нет товаров.")
-        return
-    
-    if idx < 0: idx = 0
-    if idx >= len(filtered): idx = len(filtered) - 1
-    p = filtered[idx]
-    
-    caption = (f"📦 *{subcategory}* | Размер: {size}\n\n"
-               f"*{p['name']}*\n"
-               f"💰 Цена: {p['price']} ₽")
-
-    mk = types.InlineKeyboardMarkup(row_width=3)
-    nav_row = []
-    # Навигация
-    if idx > 0: nav_row.append(types.InlineKeyboardButton("⬅️", callback_data=f"brw_{size}_{idx-1}"))
-    else: nav_row.append(types.InlineKeyboardButton(" ", callback_data="none"))
-    nav_row.append(types.InlineKeyboardButton(f"{idx+1} / {len(filtered)}", callback_data="none"))
-    if idx < len(filtered) - 1: nav_row.append(types.InlineKeyboardButton("➡️", callback_data=f"brw_{size}_{idx+1}"))
-    else: nav_row.append(types.InlineKeyboardButton(" ", callback_data="none"))
-    
-    mk.add(*nav_row)
-    mk.add(types.InlineKeyboardButton("🛒 В корзину", callback_data=f"cart_add::{p['id']}::{size}"))
-    # Кнопка возврата к списку размеров именно этой подкатегории
-    mk.add(types.InlineKeyboardButton("◀️ Назад к размерам", callback_data=f"open_sub_{subcategory}"))
-    
-    send_one_photo(chat_id, p['image'], caption, reply_markup=mk, user_id=user_id)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("open_sub_"))
 def open_subcategory_callback(call):
@@ -2455,9 +2546,29 @@ def handle_media_admin(message):
         send_one_msg(message.chat.id, "✅ Приветствие обновлено!", reply_markup=get_admin_reply_menu(), user_id=user_id)
         user_data[user_id]['waiting_for'] = None
 
-    # --- СЦЕНАРИЙ 2: НОВЫЙ ТОВАР (ФИНАЛ) ---
+    # --- СЦЕНАРИЙ 2: РЕДАКТИРОВАНИЕ ФОТО ТОВАРА ---
+    elif wf and wf.startswith('photo_edit_'):
+        try:
+            product_id = int(wf.split("_")[2])
+            product = find_product_by_id(product_id)
+            if not product:
+                bot.send_message(message.chat.id, "❌ Товар не найден.")
+                user_data[user_id]['waiting_for'] = None
+                return
+            
+            product['image'] = file_id
+            save_products()
+            bot.send_message(message.chat.id, "✅ Фото товара обновлено!", reply_markup=get_admin_reply_menu())
+            user_data[user_id]['waiting_for'] = None
+            user_data[user_id].pop('editing_product_id', None)
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении фото товара: {e}")
+            bot.send_message(message.chat.id, "❌ Ошибка при обновлении фото.")
+            user_data[user_id]['waiting_for'] = None
+    
+    # --- СЦЕНАРИЙ 3: НОВЫЙ ТОВАР (ФИНАЛ) ---
     elif wf == 'photo_new_item_final':
-        p = user_data[user_id].get('new_product') # Используем 'new_product'
+        p = user_data[user_id].get('new_product')
         if not p:
             bot.send_message(message.chat.id, "❌ Ошибка данных. Начните создание товара заново.")
             return
@@ -2539,31 +2650,52 @@ def handle_text(message):
     # ==========================================
     # 0. УНИВЕРСАЛЬНАЯ ЛОГИКА КНОПКИ "НАЗАД"
     # ==========================================
-    if text == "◀️ Назад" or text == "◀️ Главное меню":
+    if text == "◀️ Назад":
         user_data[user_id]['waiting_for'] = None
-        user_data[user_id]['temp_cat'] = None
+        user_data[user_id].pop('temp_cat', None)
+        user_data[user_id].pop('temp_sub', None)
         
-        # Если админ — возвращаем в админ-панель
+        # Если клиент находится в каталоге (выбрана категория), возвращаем его назад по навигации
+        if user_data[user_id].get('current_cat'):
+            if user_data[user_id].get('current_sub') and user_data[user_id].get('current_sub') != "Модели":
+                # Возврат из подкатегории одежды к списку подкатегорий
+                user_data[user_id]['current_sub'] = None
+                cat = user_data[user_id].get('current_cat')
+                subcats = PRODUCTS.get(cat, {})
+                mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
+                for s in subcats.keys(): mk.add(s)
+                mk.add("◀️ Назад")
+                send_one_msg(message.chat.id, f"📂 Разделы в {cat}:", reply_markup=mk, user_id=user_id)
+            else:
+                # Из корня категории или из обуви — в главное меню
+                user_data[user_id]['current_cat'] = None
+                user_data[user_id]['current_sub'] = None
+                send_welcome(message.chat.id, user_id)
+            return
+
+        # Если админ И мы не в каталоге (current_cat is None) — возвращаем в админ-панель
         if is_admin(user_id):
             send_one_msg(message.chat.id, "🔧 Админ-панель", 
                          reply_markup=get_admin_reply_menu(), user_id=user_id)
             return
 
-        # Навигация клиента
-        if user_data[user_id].get('current_sub') and user_data[user_id].get('current_sub') != "Модели":
-            # Возврат из подкатегории одежды к списку подкатегорий
-            user_data[user_id]['current_sub'] = None
-            cat = user_data[user_id].get('current_cat')
-            subcats = PRODUCTS.get(cat, {})
-            mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            for s in subcats.keys(): mk.add(s)
-            mk.add("◀️ Назад")
-            send_one_msg(message.chat.id, f"📂 Разделы в {cat}:", reply_markup=mk, user_id=user_id)
-        else:
-            # Из корня категории или из обуви — в главное меню
-            user_data[user_id]['current_cat'] = None
-            user_data[user_id]['current_sub'] = None
-            send_welcome(message.chat.id, user_id)
+        # Если обычный юзер и мы не в каталоге (по идее сюда попадаем если current_cat был None)
+        send_welcome(message.chat.id, user_id)
+        return
+    
+    # ==========================================
+    # 0.1. ОБРАБОТКА "ГЛАВНОЕ МЕНЮ" (ВСЕГДА В ГЛАВНОЕ МЕНЮ КЛИЕНТА)
+    # ==========================================
+    if text == "◀️ Главное меню":
+        # Очищаем все состояния
+        user_data[user_id]['waiting_for'] = None
+        user_data[user_id]['current_cat'] = None
+        user_data[user_id]['current_sub'] = None
+        user_data[user_id].pop('temp_cat', None)
+        user_data[user_id].pop('temp_sub', None)
+        
+        # ВСЕГДА возвращаем в главное меню клиента (не в админ-панель)
+        send_welcome(message.chat.id, user_id)
         return
 
     # ==========================================
@@ -2572,34 +2704,65 @@ def handle_text(message):
     if wf:
         # --- ПРОМОКОДЫ (СОЗДАНИЕ АДМИНОМ) ---
         if wf == 'add_promo_name':
-            user_data[user_id]['promo_tmp'] = {'name': text.upper()}
+            code = text.upper().strip()
+            if not code:
+                send_one_msg(message.chat.id, "❌ Название промокода не может быть пустым. Введите название:", user_id=user_id)
+                return
+            
+            if code in PROMOCODES:
+                send_one_msg(message.chat.id, f"⚠️ Промокод `{code}` уже существует! Введите другое название:", user_id=user_id)
+                return
+            
+            user_data[user_id]['promo_tmp'] = {'name': code}
             user_data[user_id]['waiting_for'] = 'add_promo_val'
-            send_one_msg(message.chat.id, f"💰 Введите сумму скидки для `{text.upper()}`:", user_id=user_id)
+            send_one_msg(message.chat.id, f"💰 Введите сумму скидки для `{code}`:", user_id=user_id)
             return
         if wf == 'add_promo_val':
             if text.isdigit():
-                user_data[user_id]['promo_tmp']['value'] = int(text)
-                user_data[user_id]['waiting_for'] = 'add_promo_limit'
-                send_one_msg(message.chat.id, "📏 Сколько раз можно использовать код?", user_id=user_id)
+                value = int(text)
+                if value > 0:
+                    user_data[user_id]['promo_tmp']['value'] = value
+                    user_data[user_id]['waiting_for'] = 'add_promo_limit'
+                    send_one_msg(message.chat.id, "📏 Сколько раз можно использовать код?", user_id=user_id)
+                else:
+                    send_one_msg(message.chat.id, "❌ Значение должно быть больше 0. Введите корректное значение:", user_id=user_id)
+            else:
+                send_one_msg(message.chat.id, "❌ Введите корректное число:", user_id=user_id)
             return
         if wf == 'add_promo_limit':
             if text.isdigit():
-                tmp = user_data[user_id]['promo_tmp']
-                PROMOCODES[tmp['name']] = {"type": "fixed", "value": tmp['value'], "left": int(text)}
-                save_promocodes()
-                user_data[user_id]['waiting_for'] = None
-                send_one_msg(message.chat.id, f"✅ Промокод `{tmp['name']}` создан!", reply_markup=get_admin_reply_menu(), user_id=user_id)
+                limit = int(text)
+                if limit > 0:
+                    tmp = user_data[user_id]['promo_tmp']
+                    PROMOCODES[tmp['name']] = {"type": "fixed", "value": tmp['value'], "left": limit}
+                    save_promocodes()
+                    user_data[user_id]['waiting_for'] = None
+                    user_data[user_id].pop('promo_tmp', None)
+                    send_one_msg(message.chat.id, f"✅ Промокод `{tmp['name']}` создан!", reply_markup=get_admin_reply_menu(), user_id=user_id)
+                else:
+                    send_one_msg(message.chat.id, "❌ Лимит должен быть больше 0. Введите корректное значение:", user_id=user_id)
+            else:
+                send_one_msg(message.chat.id, "❌ Введите корректное число:", user_id=user_id)
             return
 
-        # --- КЛИЕНТ ВВОДИТ ПРОМОКОД ---
+        # --- КЛИЕНТ ВВОДИТ ПРОМОКОД --
         if wf == 'input_promo':
-            code = text.upper()
-            if code in PROMOCODES and PROMOCODES[code]['left'] > 0:
+            user_data[user_id]['waiting_for'] = None
+            code = text.upper().strip()
+            if not code:
+                bot.send_message(message.chat.id, "❌ Промокод не может быть пустым. Введите промокод:")
+                return
+        if code in PROMOCODES:
+            promo = PROMOCODES[code]
+            if promo['left'] > 0:
                 user_data[user_id]['applied_promo'] = code
-                bot.send_message(message.chat.id, f"✅ Промокод `{code}` применен!")
-            else: bot.send_message(message.chat.id, "❌ Неверный или истекший код.")
-            user_data[user_id]['waiting_for'] = None; show_cart(message); return
-
+                bot.send_message(message.chat.id, f"✅ Промокод `{code}` применён!")
+            else:
+                bot.send_message(message.chat.id, "❌ Промокод исчерпан (лимит использований достигнут).")
+        else:
+            bot.send_message(message.chat.id, "❌ Неверный промокод. Проверьте правильность ввода.")
+            show_cart(message)
+            return
         # --- ПОДДЕРЖКА (СОЗДАНИЕ ТИКЕТА) ---
         if wf == 'support_message':
             global NEXT_TICKET_ID
@@ -2609,8 +2772,84 @@ def handle_text(message):
             SUPPORT_TICKETS[tid] = {"id": tid, "user_id": user_id, "status": "new", "history": [f"👤 Клиент: {text}"]}
             save_tickets()
             mk = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🛠 В работу", callback_data=f"support_take::{tid}"))
-            bot.send_message(SUPPORT_GROUP_ID, f"🆘 *ЗАЯВКА #{tid}*\n👤 {full_name}\n📝 {text}", parse_mode="Markdown", reply_markup=mk)
-            bot.send_message(message.chat.id, "✅ Запрос отправлен!"); user_data[user_id]['waiting_for'] = None; return
+            admin_msg = bot.send_message(SUPPORT_GROUP_ID, f"🆘 *ЗАЯВКА #{tid}*\n👤 {full_name}\n📝 {text}", parse_mode="Markdown", reply_markup=mk)
+            SUPPORT_TICKETS[tid]['admin_msg_id'] = admin_msg.message_id
+            save_tickets()
+            bot.send_message(message.chat.id, "✅ Запрос отправлен!")
+            user_data[user_id]['waiting_for'] = None
+            return
+        
+        # --- ПОДДЕРЖКА (ОТВЕТ АДМИНА) ---
+        if wf and wf.startswith('msg_to_support::'):
+            try:
+                ticket_id = int(wf.split("::")[1])
+                ticket = SUPPORT_TICKETS.get(ticket_id)
+                if not ticket:
+                    bot.send_message(message.chat.id, "❌ Тикет не найден.")
+                    user_data[user_id]['waiting_for'] = None
+                    return
+                
+                # Отправляем ответ клиенту
+                client_text = f"👨‍💻 *Ответ поддержки по вашему запросу #{ticket_id}:*\n\n{text}"
+                try:
+                    bot.send_message(ticket['user_id'], client_text, parse_mode="Markdown")
+                except Exception as e:
+                    bot.send_message(message.chat.id, f"❌ Не удалось отправить клиенту: {e}")
+                    user_data[user_id]['waiting_for'] = None
+                    return
+                
+                # Обновляем историю
+                ticket['history'].append(f"👨‍💻 Менеджер: {text}")
+                ticket['status'] = 'in_work'
+                save_tickets()
+                
+                bot.send_message(message.chat.id, f"✅ Ответ отправлен клиенту по тикету #{ticket_id}")
+                user_data[user_id]['waiting_for'] = None
+                return
+            except Exception as e:
+                logger.error(f"Ошибка при отправке ответа поддержки: {e}")
+                bot.send_message(message.chat.id, "❌ Ошибка при отправке ответа.")
+                user_data[user_id]['waiting_for'] = None
+                return
+        
+        # --- ПОДДЕРЖКА (ОТВЕТ КЛИЕНТА) ---
+        if wf == 'client_reply_message':
+            try:
+                ticket_id = user_data[user_id].get('current_ticket_id')
+                if not ticket_id:
+                    bot.send_message(message.chat.id, "❌ Ошибка: не найден ID тикета.")
+                    user_data[user_id]['waiting_for'] = None
+                    return
+                
+                ticket = SUPPORT_TICKETS.get(ticket_id)
+                if not ticket or ticket['status'] != 'in_work':
+                    bot.send_message(message.chat.id, "❌ Тикет не активен или закрыт.")
+                    user_data[user_id]['waiting_for'] = None
+                    return
+                
+                # Отправляем сообщение в группу поддержки
+                username, full_name = get_user_info(message.from_user)
+                support_text = f"💬 *Ответ клиента по тикету #{ticket_id}:*\n👤 {full_name}\n📝 {text}"
+                try:
+                    bot.send_message(SUPPORT_GROUP_ID, support_text, parse_mode="Markdown")
+                except Exception as e:
+                    bot.send_message(message.chat.id, f"❌ Не удалось отправить в поддержку: {e}")
+                    user_data[user_id]['waiting_for'] = None
+                    return
+                
+                # Обновляем историю
+                ticket['history'].append(f"👤 Клиент: {text}")
+                save_tickets()
+                
+                bot.send_message(message.chat.id, f"✅ Ваше сообщение отправлено в поддержку!")
+                user_data[user_id]['waiting_for'] = None
+                user_data[user_id].pop('current_ticket_id', None)
+                return
+            except Exception as e:
+                logger.error(f"Ошибка при отправке ответа клиента: {e}")
+                bot.send_message(message.chat.id, "❌ Ошибка при отправке сообщения.")
+                user_data[user_id]['waiting_for'] = None
+                return
 
         # --- СОЗДАНИЕ ТОВАРА (УМНАЯ ЛОГИКА) ---
         if wf == 'prod_cat':
@@ -2637,31 +2876,91 @@ def handle_text(message):
             return
 
         if wf == 'prod_name':
-            user_data[user_id]['new_product'] = {'id': get_next_product_id(), 'name': text, 'category': user_data[user_id]['temp_cat'], 'subcategory': user_data[user_id]['temp_sub']}
-            user_data[user_id]['waiting_for'] = 'prod_price'; send_one_msg(message.chat.id, "💰 Цена:", user_id=user_id); return
+            if text.strip():
+                user_data[user_id]['new_product'] = {
+                    'id': get_next_product_id(),
+                    'name': text.strip(),
+                    'category': user_data[user_id]['temp_cat'],
+                    'subcategory': user_data[user_id]['temp_sub']
+                }
+                user_data[user_id]['waiting_for'] = 'prod_price'
+                send_one_msg(message.chat.id, "💰 Введите цену товара (только число):", user_id=user_id)
+            else:
+                send_one_msg(message.chat.id, "❌ Название не может быть пустым. Введите название товара:", user_id=user_id)
+            return
         
         if wf == 'prod_price':
             if text.isdigit():
-                user_data[user_id]['new_product']['price'] = int(text)
-                user_data[user_id]['waiting_for'] = 'prod_sizes'
-                send_one_msg(message.chat.id, "📏 Размеры (через запятую):", user_id=user_id)
+                price = int(text)
+                if price > 0:
+                    user_data[user_id]['new_product']['price'] = price
+                    user_data[user_id]['waiting_for'] = 'prod_sizes'
+                    send_one_msg(message.chat.id, "📏 Размеры (через запятую):", user_id=user_id)
+                else:
+                    send_one_msg(message.chat.id, "❌ Цена должна быть больше 0. Введите корректную цену:", user_id=user_id)
+            else:
+                send_one_msg(message.chat.id, "❌ Введите корректную цену (только число):", user_id=user_id)
             return
 
         if wf == 'prod_sizes':
-            user_data[user_id]['new_product']['sizes'] = [s.strip() for s in text.split(',')]
-            user_data[user_id]['new_product']['stock'] = {s: True for s in user_data[user_id]['new_product']['sizes']}
-            user_data[user_id]['waiting_for'] = 'photo_new_item_final'
-            send_one_msg(message.chat.id, "🖼 Отправьте ФОТО товара:", user_id=user_id)
+            sizes = [s.strip() for s in text.split(',') if s.strip()]
+            if sizes:
+                user_data[user_id]['new_product']['sizes'] = sizes
+                user_data[user_id]['new_product']['stock'] = {s: True for s in sizes}
+                user_data[user_id]['waiting_for'] = 'photo_new_item_final'
+                send_one_msg(message.chat.id, "🖼 Отправьте ФОТО товара:", user_id=user_id)
+            else:
+                send_one_msg(message.chat.id, "❌ Размеры не могут быть пустыми. Введите размеры через запятую:", user_id=user_id)
             return
 
+        # --- СОЗДАНИЕ КАТЕГОРИИ ---
+        if wf == 'wait_cat_name':
+            if text.strip():
+                cat_name = text.strip()
+                if cat_name not in PRODUCTS:
+                    PRODUCTS[cat_name] = {}
+                    save_products()
+                    send_one_msg(message.chat.id, f"✅ Категория '{cat_name}' создана!", reply_markup=get_admin_reply_menu(), user_id=user_id)
+                else:
+                    send_one_msg(message.chat.id, f"⚠️ Категория '{cat_name}' уже существует!", reply_markup=get_admin_reply_menu(), user_id=user_id)
+                user_data[user_id]['waiting_for'] = None
+            return
+        
+        # --- СОЗДАНИЕ ПОДКАТЕГОРИИ (ШАГ 1: ВЫБОР КАТЕГОРИИ) ---
+        if wf == 'wait_subcat_cat':
+            if text in PRODUCTS and text != "welcome":
+                user_data[user_id]['temp_cat'] = text
+                user_data[user_id]['waiting_for'] = 'wait_subcat_name'
+                send_one_msg(message.chat.id, f"📝 Имя новой подкатегории в '{text}':", reply_markup=types.ReplyKeyboardRemove(), user_id=user_id)
+            return
+        
+        # --- СОЗДАНИЕ ПОДКАТЕГОРИИ (ШАГ 2: ВВОД ИМЕНИ) ---
+        if wf == 'wait_subcat_name':
+            temp_cat = user_data[user_id].get('temp_cat')
+            if temp_cat and temp_cat in PRODUCTS:
+                subcat_name = text.strip()
+                if subcat_name:
+                    if subcat_name not in PRODUCTS[temp_cat]:
+                        PRODUCTS[temp_cat][subcat_name] = []
+                        save_products()
+                        send_one_msg(message.chat.id, f"✅ Подкатегория '{subcat_name}' создана в '{temp_cat}'!", reply_markup=get_admin_reply_menu(), user_id=user_id)
+                    else:
+                        send_one_msg(message.chat.id, f"⚠️ Подкатегория '{subcat_name}' уже существует!", reply_markup=get_admin_reply_menu(), user_id=user_id)
+                    user_data[user_id]['waiting_for'] = None
+                    user_data[user_id].pop('temp_cat', None)
+            return
+        
         # --- УДАЛЕНИЕ ---
         if wf == 'delete_product_by_name':
-            admin_delete_product_by_name_handler(message); return
+            admin_delete_product_by_name_handler(message)
+            return
         if wf == 'del_cat_final':
             if text in PRODUCTS:
-                del PRODUCTS[text]; save_products()
+                del PRODUCTS[text]
+                save_products()
                 send_one_msg(message.chat.id, "🗑 Категория удалена.", reply_markup=get_admin_reply_menu(), user_id=user_id)
-            user_data[user_id]['waiting_for'] = None; return
+            user_data[user_id]['waiting_for'] = None
+            return
 
     # ==========================================
     # 2. ГЛАВНЫЕ КНОПКИ АДМИНА
@@ -2673,7 +2972,16 @@ def handle_text(message):
             send_one_msg(message.chat.id, "Что удаляем?", reply_markup=get_admin_delete_menu_root(), user_id=user_id); return
         if text == "📁 Категорию":
             user_data[user_id]['waiting_for'] = 'wait_cat_name'
-            send_one_msg(message.chat.id, "📝 Имя новой категории:", reply_markup=types.ReplyKeyboardRemove(), user_id=user_id); return
+            send_one_msg(message.chat.id, "📝 Имя новой категории:", reply_markup=types.ReplyKeyboardRemove(), user_id=user_id)
+            return
+        if text == "📂 Подкатегорию":
+            user_data[user_id]['waiting_for'] = 'wait_subcat_cat'
+            mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            for c in PRODUCTS.keys():
+                if c != "welcome": mk.add(c)
+            mk.add("◀️ Назад")
+            send_one_msg(message.chat.id, "📁 Выберите категорию для подкатегории:", reply_markup=mk, user_id=user_id)
+            return
         if text == "🎁 Товар":
             user_data[user_id]['waiting_for'] = 'prod_cat'
             mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -2730,6 +3038,102 @@ def show_size_menu_inline(chat_id, cat, sub, user_id):
     
     send_one_msg(chat_id, f"📏 Выберите размер в {sub}:", reply_markup=mk, user_id=user_id)
 
+
+
+@bot.callback_query_handler(func=lambda c: c.data == "back_to_nav")
+def back_to_nav_callback(call):
+    user_id = call.from_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    
+    try:
+        # Сначала отвечаем на callback, чтобы убрать индикатор загрузки
+        bot.answer_callback_query(call.id)
+        
+        sub = user_data[user_id].get('current_sub')
+        if sub == "Модели":  # Обувь — идём в главное меню
+            user_data[user_id]['current_cat'] = None
+            user_data[user_id]['current_sub'] = None
+            
+            # Удаляем inline-сообщение
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except Exception as e:
+                logger.error(f"Ошибка удаления сообщения: {e}")
+                # Если не удалось удалить, пытаемся отредактировать
+                try:
+                    bot.edit_message_text(
+                        "🏪 *Добро пожаловать в Orphelins Dorés!*\n\nВыберите категорию:",
+                        call.message.chat.id,
+                        call.message.message_id,
+                        parse_mode="Markdown",
+                        reply_markup=get_reply_main_menu()
+                    )
+                    return
+                except:
+                    pass
+            
+            # Очищаем last_bot_msg для этого пользователя, чтобы send_welcome создал новое сообщение
+            if user_id in last_bot_msg:
+                del last_bot_msg[user_id]
+            
+            # Отправляем главное меню
+            send_welcome(call.message.chat.id, user_id)
+            
+        else:
+            # Одежда — возвращаем к списку подкатегорий
+            cat = user_data[user_id].get('current_cat')
+            if cat and cat in PRODUCTS:
+                user_data[user_id]['current_sub'] = None
+                mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
+                for s in PRODUCTS.get(cat, {}).keys():
+                    mk.add(s)
+                mk.add("◀️ Назад")
+                
+                # Удаляем inline-сообщение
+                try:
+                    bot.delete_message(call.message.chat.id, call.message.message_id)
+                except Exception as e:
+                    logger.error(f"Ошибка удаления сообщения: {e}")
+                    # Если не удалось удалить, пытаемся отредактировать
+                    try:
+                        bot.edit_message_text(
+                            f"📂 Разделы в {cat}:",
+                            call.message.chat.id,
+                            call.message.message_id,
+                            reply_markup=mk
+                        )
+                        return
+                    except:
+                        pass
+                
+                # Очищаем last_bot_msg для этого пользователя
+                if user_id in last_bot_msg:
+                    del last_bot_msg[user_id]
+                
+                send_one_msg(call.message.chat.id, f"📂 Разделы в {cat}:", reply_markup=mk, user_id=user_id)
+            else:
+                # Если категория не найдена, возвращаем в главное меню
+                user_data[user_id]['current_cat'] = None
+                user_data[user_id]['current_sub'] = None
+                try:
+                    bot.delete_message(call.message.chat.id, call.message.message_id)
+                except:
+                    pass
+                
+                # Очищаем last_bot_msg для этого пользователя
+                if user_id in last_bot_msg:
+                    del last_bot_msg[user_id]
+                
+                send_welcome(call.message.chat.id, user_id)
+    except Exception as e:
+        logger.error(f"Ошибка в back_to_nav_callback: {e}")
+        try:
+            bot.answer_callback_query(call.id, "❌ Ошибка при возврате", show_alert=True)
+        except:
+            pass
+
+
 # --- ГАЛЕРЕЯ ЛИСТАНИЯ ТОВАРОВ ---
 def show_browse(chat_id, category, subcategory, size, idx, user_id):
     # Фильтруем товары по размеру
@@ -2773,18 +3177,6 @@ def show_browse(chat_id, category, subcategory, size, idx, user_id):
 
 
 # --- СПИСОК УДАЛЕНИЯ ТОВАРОВ (ДЛЯ ВСЕХ КАТЕГОРИЙ) ---
-def get_admin_delete_products_reply_menu():
-    mk = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-    has_products = False
-    for cat in PRODUCTS:
-        if cat == "welcome" or not isinstance(PRODUCTS[cat], dict): continue
-        for subcat in PRODUCTS[cat]:
-            for p in PRODUCTS[cat][subcat]:
-                mk.add(f"{p['name']} - {p['price']} ₽")
-                has_products = True
-    mk.add("◀️ Назад")
-    return mk
-
 # 3. Обработчик возврата из карточки товара к списку размеров
 @bot.callback_query_handler(func=lambda c: c.data.startswith("open_sub_"))
 def open_subcategory_callback(call):
@@ -2795,47 +3187,12 @@ def open_subcategory_callback(call):
         show_size_menu_inline(call.message.chat.id, cat_name, sub_name, user_id)
     bot.answer_callback_query(call.id)
 
-@bot.callback_query_handler(func=lambda c: c.data == "back_to_nav")
-def back_to_nav_callback(call):
-    user_id = call.from_user.id
-    sub = user_data[user_id].get('current_sub')
-    if sub == "Модели":  # Обувь — идём в главное меню
-        user_data[user_id]['current_cat'] = None
-        user_data[user_id]['current_sub'] = None
-        send_welcome(call.message.chat.id, user_id)
-    else:
-        # Одежда — возвращаем к списку подкатегорий
-        cat = user_data[user_id].get('current_cat')
-        if cat:
-            user_data[user_id]['current_sub'] = None
-            mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            for s in PRODUCTS.get(cat, {}).keys():
-                mk.add(s)
-            mk.add("◀️ Назад")
-            send_one_msg(call.message.chat.id, f"📂 Разделы в {cat}:", reply_markup=mk, user_id=user_id)
-    bot.answer_callback_query(call.id)
-
-def show_size_menu_inline(chat_id, cat, sub, user_id):
-    products = PRODUCTS.get(cat, {}).get(sub, [])
-    sizes = set()
-    for p in products:
-        for s in p.get('sizes', []):
-            sizes.add(s)
-    if not sizes:
-        send_one_msg(chat_id, f"❌ В разделе {sub} пока нет товаров.", user_id=user_id)
-        return
-
-    mk = types.InlineKeyboardMarkup(row_width=4)
-    btns = [types.InlineKeyboardButton(s, callback_data=f"sh_sz_{s}_0") for s in sorted(sizes)]
-    mk.add(*btns)
-    mk.add(types.InlineKeyboardButton("◀️ Назад", callback_data="back_to_nav"))
-
-    send_one_msg(chat_id, f"📏 Выберите размер в {sub}:", reply_markup=mk, user_id=user_id)
-
-
 @bot.callback_query_handler(func=lambda c: c.data == "back_to_cats_or_subs")
 def back_to_navigation(call):
     user_id = call.from_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    
     cat = user_data[user_id].get('current_cat')
     sub = user_data[user_id].get('current_sub')
     
@@ -2843,16 +3200,27 @@ def back_to_navigation(call):
     if sub == "Модели":
         user_data[user_id]['current_cat'] = None
         user_data[user_id]['current_sub'] = None
-        bot.delete_message(call.message.chat.id, call.message.message_id)
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except:
+            pass
         send_welcome(call.message.chat.id, user_id)
     else:
         # Если одежда — возвращаем к списку подкатегорий
-        user_data[user_id]['current_sub'] = None
-        mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        for s in PRODUCTS[cat].keys(): mk.add(s)
-        mk.add("◀️ Назад")
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, f"📂 Разделы в {cat}:", reply_markup=mk)
+        if cat and cat in PRODUCTS:
+            user_data[user_id]['current_sub'] = None
+            mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            for s in PRODUCTS[cat].keys(): 
+                mk.add(s)
+            mk.add("◀️ Назад")
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except:
+                pass
+            send_one_msg(call.message.chat.id, f"📂 Разделы в {cat}:", reply_markup=mk, user_id=user_id)
+        else:
+            # Если категория не найдена, возвращаем в главное меню
+            send_welcome(call.message.chat.id, user_id)
     
     bot.answer_callback_query(call.id)
 
@@ -2945,20 +3313,26 @@ def select_size_and_browse(call):
 
 def check_bot_in_group():
     try:
+        # Check if the bot can see the chat (meaning it's a member and has access)
         chat_info = bot.get_chat(ADMIN_GROUP_ID)
-        bot_info = bot.get_me()
-        member = bot.get_chat_member(ADMIN_GROUP_ID, bot_info.id)
-        return member.status in ['administrator', 'member']
+        # Check if the bot is a member/admin in the chat
+        member = bot.get_chat_member(ADMIN_GROUP_ID, bot.get_me().id)
+        return member.status in ['administrator', 'member', 'creator']
     except Exception as e:
         logger.error(f"Ошибка доступа к основной админ-группе: {e}")
         return False
+
 def convert_old_products():
     updated = False
-    for category in ["shoes", "clothes"]:
-        for product in PRODUCTS.get(category, []):
-            if 'sizes' in product and 'stock' not in product:
-                product['stock'] = {size: True for size in product['sizes']}
-                updated = True
+    # Iterate dynamically over all categories except special ones like "welcome"
+    for category in PRODUCTS:
+        if category == "welcome" or not isinstance(PRODUCTS[category], dict):
+            continue
+        for subcat in PRODUCTS[category]:
+             for product in PRODUCTS[category][subcat]:
+                if 'sizes' in product and 'stock' not in product:
+                    product['stock'] = {size: True for size in product['sizes']}
+                    updated = True
     if updated:
         save_products()
         print("✅ Товары обновлены — добавлено поле 'stock'")
@@ -2966,30 +3340,14 @@ def convert_old_products():
 def check_bot_in_support_group():
     try:
         chat_info = bot.get_chat(SUPPORT_GROUP_ID)
-        bot_info = bot.get_me()
-        member = bot.get_chat_member(SUPPORT_GROUP_ID, bot_info.id)
-        return member.status in ['administrator', 'member']
+        member = bot.get_chat_member(SUPPORT_GROUP_ID, bot.get_me().id)
+        return member.status in ['administrator', 'member', 'creator']
     except Exception as e:
         logger.error(f"Ошибка доступа к группе поддержки: {e}")
         return False
-    
 
 
-# Создаём Flask-сервер для ответа на HTTP-запросы
-app = Flask(__name__)
-
-@app.route('/')
-def health_check():
-    return Response("Bot is alive", status=200)
-
-# Запускаем сервер в фоне
-thread = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 8080))))
-thread.daemon = True
-thread.start()
-
-
-
-# Создаём Flask-сервер для Koyeb
+# Создаём Flask-сервер
 app = Flask(__name__)
 
 @app.route('/')
@@ -2997,9 +3355,9 @@ def health_check():
     return "Бот работает!", 200
 
 def run_flask():
-    # Берем порт, который дает Koyeb, или используем 8000 по умолчанию
-    port = int(os.environ.get("PORT", 8000)) 
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8000))
+    # Disable reloader and debugger to avoid side effects in threads
+    app.run(host="0.0.0.0", port=port, use_reloader=False, debug=False)
 
 if __name__ == "__main__":
     try:
@@ -3014,22 +3372,24 @@ if __name__ == "__main__":
         flask_thread.start()
         print(f"✅ Flask сервер запущен на порту {os.environ.get('PORT', 8000)}")
 
-
         print("✅ Товары и заказы загружены. Бот запускается...")
-        
-        bot.infinity_polling(timeout=10, long_polling_timeout=5)
-        
+
+        # Optional: Check groups permissions before starting
+        # Note: This might fail if the bot is not yet running/connected in some environments,
+        # but generally safe to call if the token is valid.
         if check_bot_in_group():
             print("✅ Доступ к основной админ-группе подтвержден")
         else:
-            print("⚠️ Проблемы с основной группой. Проверьте ID и права бота.")
+            print(f"⚠️ Проблемы с основной группой {ADMIN_GROUP_ID}. Проверьте ID и права бота.")
 
         if check_bot_in_support_group():
             print("✅ Доступ к группе поддержки подтвержден")
         else:
-            print("⚠️ Проблемы с группой поддержки. Проверьте ID и права бота.")
+            print(f"⚠️ Проблемы с группой поддержки {SUPPORT_GROUP_ID}. Проверьте ID и права бота.")
 
-        bot.infinity_polling()
+        bot.infinity_polling(timeout=10, long_polling_timeout=5)
+
     except Exception as e:
+        logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА:", exc_info=True)
         print("❌ КРИТИЧЕСКАЯ ОШИБКА:")
         print(e)
